@@ -5,20 +5,50 @@ import threading
 import time
 import pystray
 from pystray import MenuItem as item
-from PIL import Image, ImageDraw
-import winsound  # For playing notification sound
+from PIL import Image
+import winsound
+import json
+import os
 
 class BatteryApp:
+    SETTINGS_FILE = "settings.json"
+
     def __init__(self, root):
         self.root = root
         self.root.title("Battery Monitor")
-        self.root.geometry("300x150")
+        self.root.geometry("300x200")
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         
+        # Initialize user-defined thresholds
+        self.max_charge = tk.IntVar(value=85)
+        self.min_charge = tk.IntVar(value=20)
+
+        # Load settings if available
+        self.load_settings()
+
+        # Style configuration
+        self.style = ttk.Style()
+        self.style.configure("TLabel", font=("Helvetica", 12), background="#f0f0f0", foreground="#333")
+        self.style.configure("TButton", font=("Helvetica", 12), padding=5)
+
+        # Set background color
+        self.root.configure(bg="#f0f0f0")
+        self.root.iconphoto(True, tk.PhotoImage(file="app_icon.png"))
+
         # Battery Percentage Label
-        self.percent_label = ttk.Label(root, text="Battery: --%", font=("Arial", 14))
-        self.percent_label.pack(pady=20)
-        
+        self.percent_label = ttk.Label(root, text="Battery: --%", font=("Helvetica", 15, "bold"))
+        self.percent_label.pack(pady=15)
+
+        # Max Charge Entry
+        self.create_entry_section("Max Charge (%):", self.max_charge).pack(pady=5)
+
+        # Min Charge Entry
+        self.create_entry_section("Min Charge (%):", self.min_charge).pack(pady=5)
+
+        # Save Button
+        save_button = ttk.Button(root, text="Save Settings", command=self.save_settings)
+        save_button.pack(pady=10)
+
         # Update battery status
         self.update_battery_status()
 
@@ -31,6 +61,42 @@ class BatteryApp:
         self.icon = self.create_tray_icon()
         self.icon.run_detached()
 
+    def create_entry_section(self, label_text, var):
+        frame = ttk.Frame(self.root, padding=5)
+        frame.configure(style="TFrame")
+
+        label = ttk.Label(frame, text=label_text)
+        label.pack(side=tk.LEFT, padx=5)
+
+        entry = tk.Entry(frame, textvariable=var, width=6, font=("Helvetica", 12))  # Using tk.Entry with font size 12
+        entry.pack(side=tk.LEFT, padx=5)
+
+        return frame
+
+    def save_settings(self):
+        try:
+            max_value = int(self.max_charge.get())
+            min_value = int(self.min_charge.get())
+            if 0 <= min_value < max_value <= 100:
+                settings = {
+                    "max_charge": max_value,
+                    "min_charge": min_value
+                }
+                with open(self.SETTINGS_FILE, 'w') as file:
+                    json.dump(settings, file)
+                print(f"Settings saved. Max charge: {max_value}%, Min charge: {min_value}%")
+            else:
+                print("Invalid settings. Ensure min charge is less than max charge and both are between 0 and 100.")
+        except ValueError:
+            print("Invalid input. Please enter integer values.")
+
+    def load_settings(self):
+        if os.path.exists(self.SETTINGS_FILE):
+            with open(self.SETTINGS_FILE, 'r') as file:
+                settings = json.load(file)
+                self.max_charge.set(settings.get("max_charge", 85))
+                self.min_charge.set(settings.get("min_charge", 20))
+
     def update_battery_status(self):
         battery = psutil.sensors_battery()
         percent = battery.percent
@@ -38,28 +104,49 @@ class BatteryApp:
         self.root.after(10000, self.update_battery_status)  # Update every 10 seconds
 
     def battery_monitor(self):
-        self.show_popup()
         while True:
             battery = psutil.sensors_battery()
             percent = battery.percent
-            if percent >= 85:
-                self.show_popup()
+            power_plugged = battery.power_plugged
+            max_value = self.max_charge.get()
+            min_value = self.min_charge.get()
+            
+            # Check if the device is charging
+            if not power_plugged:
+                if percent >= max_value:
+                    self.show_popup(f"Battery level is {percent}%. Unplug your charger!")
+                elif percent <= min_value:
+                    self.show_popup(f"Battery level is {percent}%. Plug in your charger!")
+            
             time.sleep(60)  # Check battery status every 60 seconds
 
-    def show_popup(self):
+    def show_popup(self, message):
         # Play notification sound
         winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
         
         # Create and display popup
         popup = tk.Toplevel(self.root)
-        popup.geometry("300x100+10+10")  # Position the popup in the bottom left corner
+        popup.geometry("300x80")  # Smaller popup size
         popup.overrideredirect(1)  # Remove window borders
         popup.attributes("-topmost", True)  # Keep the popup on top
+        popup.configure(bg="#ffffff")
 
-        label = tk.Label(popup, text="Battery level is 85% or above!", font=("Arial", 12))
+        label = tk.Label(popup, text=message, font=("Helvetica", 10), bg="#ffffff", fg="#333")
         label.pack(expand=True)
 
-        popup.after(5000, popup.destroy)  # Auto-close popup after 5 seconds
+        # Add fade-in effect
+        self.fade_in(popup)
+
+        popup.after(10000, popup.destroy)  # Auto-close popup after 10 seconds
+
+    def fade_in(self, widget, alpha=0.1):
+        # Simple fade-in effect
+        widget.attributes("-alpha", alpha)
+        if alpha < 1.0:
+            alpha += 0.05
+            widget.after(50, lambda: self.fade_in(widget, alpha))
+        else:
+            widget.attributes("-alpha", 1.0)
 
     def hide_window(self):
         self.root.withdraw()  # Hide the main window
@@ -67,22 +154,21 @@ class BatteryApp:
     def on_quit(self, icon, item):
         self.icon.stop()
         self.root.quit()
+        self.root.destroy()  # Ensures the application is completely terminated
 
     def show_window(self, icon, item):
         self.root.deiconify()
 
     def create_tray_icon(self):
-        # Create a blank icon
-        image = Image.new("RGB", (64, 64), (255, 255, 255))
-        draw = ImageDraw.Draw(image)
-        draw.rectangle((0, 0, 63, 63), fill="black")
-
+        # Load the tray icon
+        icon_image = Image.open("tray_icon.ico")
+        
         # Add tray icon with a menu
         menu = (
             item('Show', self.show_window),
             item('Quit', self.on_quit)
         )
-        icon = pystray.Icon("Battery Monitor", image, "Battery Monitor", menu)
+        icon = pystray.Icon("Battery Monitor", icon_image, "Battery Monitor", menu)
         return icon
 
 if __name__ == "__main__":
