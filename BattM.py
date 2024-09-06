@@ -16,12 +16,15 @@ class BatteryApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Battery Monitor")
-        self.root.geometry("300x200")
+        self.root.geometry("300x00")
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         
         # Initialize user-defined thresholds
         self.max_charge = tk.IntVar(value=85)
         self.min_charge = tk.IntVar(value=20)
+
+        # Initialize error message variable
+        self.error_message = tk.StringVar()
 
         # Load settings if available
         self.load_settings()
@@ -48,6 +51,10 @@ class BatteryApp:
         # Save Button
         save_button = ttk.Button(root, text="Save Settings", command=self.save_settings)
         save_button.pack(pady=10)
+
+        # Error Message Label
+        self.error_label = ttk.Label(root, textvariable=self.error_message, font=("Helvetica", 10), foreground="red", background="#f0f0f0")
+        self.error_label.pack(pady=5)
 
         # Update battery status
         self.update_battery_status()
@@ -85,10 +92,11 @@ class BatteryApp:
                 with open(self.SETTINGS_FILE, 'w') as file:
                     json.dump(settings, file)
                 print(f"Settings saved. Max charge: {max_value}%, Min charge: {min_value}%")
+                self.error_message.set("")  # Clear any previous error message
             else:
-                print("Invalid settings. Ensure min charge is less than max charge and both are between 0 and 100.")
+                self.error_message.set("Invalid settings. Ensure min charge is less than max charge and both are between 0 and 100.")
         except ValueError:
-            print("Invalid input. Please enter integer values.")
+            self.error_message.set("Invalid input. Please enter integer values.")
 
     def load_settings(self):
         if os.path.exists(self.SETTINGS_FILE):
@@ -110,17 +118,27 @@ class BatteryApp:
             power_plugged = battery.power_plugged
             max_value = self.max_charge.get()
             min_value = self.min_charge.get()
-            
-            # Check if the device is charging
-            if not power_plugged:
+
+            # Print debug information
+            print(f"Battery Percent: {percent}, Power Plugged: {power_plugged}, Max: {max_value}, Min: {min_value}")
+
+            if power_plugged:
+                # Battery is charging
                 if percent >= max_value:
+                    print(f"Charging notification triggered: Battery at {percent}%, Max threshold {max_value}%")
                     self.show_popup(f"Battery level is {percent}%. Unplug your charger!")
-                elif percent <= min_value:
+            else:
+                # Battery is not charging
+                if percent <= min_value:
+                    print(f"Discharging notification triggered: Battery at {percent}%, Min threshold {min_value}%")
                     self.show_popup(f"Battery level is {percent}%. Plug in your charger!")
-            
+
             time.sleep(60)  # Check battery status every 60 seconds
 
     def show_popup(self, message):
+        # Print debug information for popup
+        print(f"Showing popup with message: {message}")
+        
         # Play notification sound
         winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
         
@@ -130,6 +148,13 @@ class BatteryApp:
         popup.overrideredirect(1)  # Remove window borders
         popup.attributes("-topmost", True)  # Keep the popup on top
         popup.configure(bg="#ffffff")
+        
+        # Place the popup in the top-left corner
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        popup_x = 0
+        popup_y = 0
+        popup.geometry(f"300x80+{popup_x}+{popup_y}")
 
         label = tk.Label(popup, text=message, font=("Helvetica", 10), bg="#ffffff", fg="#333")
         label.pack(expand=True)
@@ -137,7 +162,7 @@ class BatteryApp:
         # Add fade-in effect
         self.fade_in(popup)
 
-        popup.after(10000, popup.destroy)  # Auto-close popup after 10 seconds
+        popup.after(10000, popup.destroy)
 
     def fade_in(self, widget, alpha=0.1):
         # Simple fade-in effect
