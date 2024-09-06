@@ -16,7 +16,7 @@ class BatteryApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Battery Monitor")
-        self.root.geometry("300x00")
+        self.root.geometry("300x300")
         self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
         
         # Initialize user-defined thresholds
